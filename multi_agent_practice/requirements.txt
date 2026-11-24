@@ -1,6 +1,0 @@
-# Tahap demo lokal tidak membutuhkan paket tambahan.
-# SDK untuk integrasi API akan ditambahkan pada tahap berikutnya:
-# openai
-# google-genai
-# groq
-# python-dotenv
