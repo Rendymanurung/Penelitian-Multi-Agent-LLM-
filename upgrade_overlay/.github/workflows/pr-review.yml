@@ -1,0 +1,57 @@
+name: Multi-Agent PR Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**.py'
+      - '**.pyi'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  ai-review:
+    # Avoid running paid model calls against automated dependency-bot PRs by default.
+    if: github.actor != 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: multi_agent_practice
+        run: pip install -r requirements.txt
+
+      - name: Build Python diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --no-ext-diff --unified=25 "$BASE_SHA...$HEAD_SHA" -- '*.py' '*.pyi' > multi_agent_practice/pr.diff
+
+      - name: Run multi-agent review
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-6.2-sol' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.8-flash' }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL || 'qwen/qwen3.8-27b' }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        working-directory: multi_agent_practice
+        run: |
+          python -m src.cli review-diff \
+            --diff-file pr.diff \
+            --requirement "$PR_TITLE"$'\n'"$PR_BODY" \
+            --minimum-providers 2

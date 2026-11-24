@@ -1,0 +1,71 @@
+name: Research Dataset Benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_path:
+        description: Exact path of the paired JSON/JSONL dataset in the authors' reference repository (see the dataset listing step)
+        required: true
+        default: references/jin_chen_2026/dataset/humanevalbugs.jsonl
+      mode:
+        description: single = first configured provider; multi = all configured providers
+        required: true
+        type: choice
+        options: [single, multi]
+        default: multi
+      limit:
+        description: Number of paired tasks (0 = all); use 2-5 for a smoke test first
+        required: true
+        default: '3'
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout paper authors' reproduction package and dataset
+        uses: actions/checkout@v4
+        with:
+          repository: HollinJ3177/Are-LLMs-Reliable-Code-Reviewers-Systematic-Overcorrection-in-Requirement-Conformance-Judgement
+          path: multi_agent_practice/references/jin_chen_2026
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        working-directory: multi_agent_practice
+        run: pip install -r requirements.txt
+
+      - name: List available reference datasets
+        working-directory: multi_agent_practice
+        run: python scripts/list_datasets.py --root references/jin_chen_2026/dataset
+
+      - name: Run benchmark
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-6.2-sol' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.8-flash' }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL || 'qwen/qwen3.8-27b' }}
+        working-directory: multi_agent_practice
+        run: |
+          python -m src.cli benchmark \
+            --dataset "${{ inputs.dataset_path }}" \
+            --mode "${{ inputs.mode }}" \
+            --limit "${{ inputs.limit }}" \
+            --minimum-providers 1
+
+      - name: Upload experiment results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-results-${{ github.run_id }}
+          path: multi_agent_practice/results/
+          if-no-files-found: warn
